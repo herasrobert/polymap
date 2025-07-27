@@ -4,8 +4,9 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Trash2, Users, Heart, Download, Upload } from 'lucide-react';
+import { Plus, Trash2, Users, Heart, Download, Upload, RotateCcw } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 export interface Person {
   id: string;
@@ -56,17 +57,32 @@ export const PolyMapper: React.FC = () => {
   const [isDragging, setIsDragging] = useState(false);
   const [draggedPerson, setDraggedPerson] = useState<Person | null>(null);
   const [canvasSize, setCanvasSize] = useState({ width: 800, height: 600 });
+  const [isPanning, setIsPanning] = useState(false);
+  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+  const [lastPanPoint, setLastPanPoint] = useState({ x: 0, y: 0 });
+  
+  const isMobile = useIsMobile();
+  const nodeRadius = isMobile ? 35 : 25; // Larger touch targets on mobile
 
-  const nodeRadius = 25;
-
-  // Auto-resize canvas
+  // Auto-resize canvas with mobile-aware sizing
   useEffect(() => {
     const updateCanvasSize = () => {
       if (canvasRef.current) {
         const container = canvasRef.current.parentElement;
         if (container) {
-          const width = Math.min(container.offsetWidth - 40, 1000);
-          const height = Math.min(600, window.innerHeight * 0.5);
+          let width: number;
+          let height: number;
+          
+          if (isMobile) {
+            // Mobile: Use most of the viewport width, ensure minimum viable size
+            width = Math.max(300, container.offsetWidth - 20);
+            height = Math.max(400, Math.min(500, window.innerHeight * 0.4));
+          } else {
+            // Desktop: Keep existing logic
+            width = Math.min(container.offsetWidth - 40, 1000);
+            height = Math.min(600, window.innerHeight * 0.5);
+          }
+          
           setCanvasSize({ width, height });
         }
       }
@@ -75,7 +91,7 @@ export const PolyMapper: React.FC = () => {
     updateCanvasSize();
     window.addEventListener('resize', updateCanvasSize);
     return () => window.removeEventListener('resize', updateCanvasSize);
-  }, []);
+  }, [isMobile]);
 
   const drawNetwork = useCallback(() => {
     const canvas = canvasRef.current;
@@ -112,15 +128,18 @@ export const PolyMapper: React.FC = () => {
     people.forEach(person => {
       drawPerson(ctx, person);
     });
-  }, [people, relationships]);
+  }, [people, relationships, panOffset]);
 
   const drawPerson = (ctx: CanvasRenderingContext2D, person: Person) => {
-    // Draw node circle
+    // Draw node circle with pan offset
+    const x = person.x + panOffset.x;
+    const y = person.y + panOffset.y;
+    
     ctx.beginPath();
-    ctx.arc(person.x, person.y, nodeRadius, 0, Math.PI * 2);
+    ctx.arc(x, y, nodeRadius, 0, Math.PI * 2);
     
     // Gradient fill
-    const gradient = ctx.createRadialGradient(person.x, person.y, 0, person.x, person.y, nodeRadius);
+    const gradient = ctx.createRadialGradient(x, y, 0, x, y, nodeRadius);
     gradient.addColorStop(0, person.color);
     gradient.addColorStop(1, person.color + '80');
     
@@ -137,16 +156,21 @@ export const PolyMapper: React.FC = () => {
     ctx.font = 'bold 12px Inter, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(person.name, person.x, person.y);
+    ctx.fillText(person.name, x, y);
   };
 
   const drawRelationship = (ctx: CanvasRenderingContext2D, from: Person, to: Person, type: RelationshipType) => {
     const relType = relationshipTypes.find(rt => rt.value === type);
     if (!relType) return;
 
+    const fromX = from.x + panOffset.x;
+    const fromY = from.y + panOffset.y;
+    const toX = to.x + panOffset.x;
+    const toY = to.y + panOffset.y;
+
     ctx.beginPath();
-    ctx.moveTo(from.x, from.y);
-    ctx.lineTo(to.x, to.y);
+    ctx.moveTo(fromX, fromY);
+    ctx.lineTo(toX, toY);
     
     ctx.strokeStyle = relType.color;
     ctx.lineWidth = 3;
@@ -168,8 +192,10 @@ export const PolyMapper: React.FC = () => {
     ctx.setLineDash([]); // Reset
 
     // Draw arrows
-    drawArrow(ctx, from, to, relType.color);
-    drawArrow(ctx, to, from, relType.color);
+    const fromWithOffset = { ...from, x: fromX, y: fromY };
+    const toWithOffset = { ...to, x: toX, y: toY };
+    drawArrow(ctx, fromWithOffset, toWithOffset, relType.color);
+    drawArrow(ctx, toWithOffset, fromWithOffset, relType.color);
   };
 
   const drawArrow = (ctx: CanvasRenderingContext2D, from: Person, to: Person, color: string) => {
@@ -332,20 +358,47 @@ export const PolyMapper: React.FC = () => {
     setRelationships(prev => prev.filter(rel => rel.from !== id && rel.to !== id));
   };
 
-  // Canvas mouse events
-  const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  const resetView = () => {
+    setPanOffset({ x: 0, y: 0 });
+    toast({ title: "View reset to center" });
+  };
+
+  // Helper function to get coordinates from mouse or touch event
+  const getEventCoordinates = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas) return null;
 
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
     
-    const x = (e.clientX - rect.left) * scaleX / (window.devicePixelRatio || 1);
-    const y = (e.clientY - rect.top) * scaleY / (window.devicePixelRatio || 1);
+    let clientX: number, clientY: number;
+    
+    if ('touches' in e && e.touches.length > 0) {
+      // Touch event
+      clientX = e.touches[0].clientX;
+      clientY = e.touches[0].clientY;
+    } else if ('clientX' in e) {
+      // Mouse event
+      clientX = e.clientX;
+      clientY = e.clientY;
+    } else {
+      return null;
+    }
+    
+    const x = (clientX - rect.left) * scaleX / (window.devicePixelRatio || 1) - panOffset.x;
+    const y = (clientY - rect.top) * scaleY / (window.devicePixelRatio || 1) - panOffset.y;
+    
+    return { x, y };
+  };
+
+  // Canvas mouse events
+  const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const coords = getEventCoordinates(e);
+    if (!coords) return;
 
     for (const person of people) {
-      const dist = Math.sqrt((x - person.x) ** 2 + (y - person.y) ** 2);
+      const dist = Math.sqrt((coords.x - person.x) ** 2 + (coords.y - person.y) ** 2);
       if (dist < nodeRadius) {
         setIsDragging(true);
         setDraggedPerson(person);
@@ -354,24 +407,81 @@ export const PolyMapper: React.FC = () => {
     }
   };
 
+  // Canvas touch events
+  const handleTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    e.preventDefault(); // Prevent scrolling
+    const coords = getEventCoordinates(e);
+    if (!coords) return;
+
+    // Check if touching a person node
+    let foundPerson = false;
+    for (const person of people) {
+      const dist = Math.sqrt((coords.x - person.x) ** 2 + (coords.y - person.y) ** 2);
+      if (dist < nodeRadius) {
+        setIsDragging(true);
+        setDraggedPerson(person);
+        foundPerson = true;
+        break;
+      }
+    }
+
+    // If not touching a person and on mobile, start panning
+    if (!foundPerson && isMobile) {
+      setIsPanning(true);
+      const touch = e.touches[0];
+      setLastPanPoint({ x: touch.clientX, y: touch.clientY });
+    }
+  };
+
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!isDragging || !draggedPerson) return;
+
+    const coords = getEventCoordinates(e);
+    if (!coords) return;
 
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-    
-    const x = Math.max(nodeRadius, Math.min(rect.width - nodeRadius, 
-      (e.clientX - rect.left) * scaleX / (window.devicePixelRatio || 1)));
-    const y = Math.max(nodeRadius, Math.min(rect.height - nodeRadius, 
-      (e.clientY - rect.top) * scaleY / (window.devicePixelRatio || 1)));
+    const x = Math.max(nodeRadius, Math.min(rect.width - nodeRadius, coords.x));
+    const y = Math.max(nodeRadius, Math.min(rect.height - nodeRadius, coords.y));
 
     setPeople(prev => prev.map(p => 
       p.id === draggedPerson.id ? { ...p, x, y } : p
     ));
+  };
+
+  const handleTouchMove = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    e.preventDefault(); // Prevent scrolling
+    
+    if (isDragging && draggedPerson) {
+      // Handle node dragging
+      const coords = getEventCoordinates(e);
+      if (!coords) return;
+
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const x = Math.max(nodeRadius, Math.min(rect.width - nodeRadius, coords.x));
+      const y = Math.max(nodeRadius, Math.min(rect.height - nodeRadius, coords.y));
+
+      setPeople(prev => prev.map(p => 
+        p.id === draggedPerson.id ? { ...p, x, y } : p
+      ));
+    } else if (isPanning && isMobile) {
+      // Handle canvas panning
+      const touch = e.touches[0];
+      const deltaX = touch.clientX - lastPanPoint.x;
+      const deltaY = touch.clientY - lastPanPoint.y;
+      
+      setPanOffset(prev => ({
+        x: prev.x + deltaX,
+        y: prev.y + deltaY
+      }));
+      
+      setLastPanPoint({ x: touch.clientX, y: touch.clientY });
+    }
   };
 
   const handleMouseUp = () => {
@@ -379,12 +489,19 @@ export const PolyMapper: React.FC = () => {
     setDraggedPerson(null);
   };
 
+  const handleTouchEnd = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    setIsDragging(false);
+    setDraggedPerson(null);
+    setIsPanning(false);
+  };
+
   useEffect(() => {
     drawNetwork();
   }, [drawNetwork]);
 
   return (
-    <div className="w-full max-w-7xl mx-auto p-6 space-y-6">
+    <div className={`w-full max-w-7xl mx-auto space-y-6 ${isMobile ? 'p-4' : 'p-6'}`}>
       {/* Header */}
       <div className="text-center space-y-2">
         <div className="flex items-center justify-center gap-2 mb-2">
@@ -420,7 +537,7 @@ export const PolyMapper: React.FC = () => {
       </div>
 
       {/* Controls */}
-      <div className="grid lg:grid-cols-2 gap-6">
+      <div className={`grid gap-6 ${isMobile ? 'grid-cols-1' : 'lg:grid-cols-2'}`}>
         {/* Add Person */}
         <Card className="bg-gradient-card border-border/50">
           <CardHeader>
@@ -529,9 +646,20 @@ export const PolyMapper: React.FC = () => {
       {/* Canvas */}
       <Card className="bg-gradient-card border-border/50">
         <CardHeader>
-          <CardTitle>Your Polycule Map</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle>Your Polycule Map</CardTitle>
+            {isMobile && (
+              <Button onClick={resetView} variant="outline" size="sm" className="flex items-center gap-2">
+                <RotateCcw className="h-4 w-4" />
+                Reset View
+              </Button>
+            )}
+          </div>
           <p className="text-sm text-muted-foreground">
-            Drag people around to arrange your network. Click and drag the colored circles to move people.
+            {isMobile 
+              ? "Touch and drag people to move them. Touch and drag empty space to pan the view."
+              : "Drag people around to arrange your network. Click and drag the colored circles to move people."
+            }
           </p>
         </CardHeader>
         <CardContent>
@@ -543,7 +671,10 @@ export const PolyMapper: React.FC = () => {
               onMouseMove={handleMouseMove}
               onMouseUp={handleMouseUp}
               onMouseLeave={handleMouseUp}
-              style={{ display: 'block' }}
+              onTouchStart={handleTouchStart}
+              onTouchMove={handleTouchMove}
+              onTouchEnd={handleTouchEnd}
+              style={{ display: 'block', touchAction: 'none' }}
             />
           </div>
         </CardContent>
@@ -555,7 +686,7 @@ export const PolyMapper: React.FC = () => {
           <CardTitle>Relationship Legend</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className={`grid gap-4 ${isMobile ? 'grid-cols-1' : 'sm:grid-cols-2 lg:grid-cols-3'}`}>
             {relationshipTypes.map(type => (
               <div key={type.value} className="flex items-center gap-3 p-2 rounded-lg bg-muted/50">
                 <div className="flex items-center gap-2">
