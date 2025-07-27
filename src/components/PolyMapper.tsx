@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Trash2, Users, Heart, Download, Upload, RotateCcw } from 'lucide-react';
+import { Plus, Trash2, Users, Heart, Download, Upload, RotateCcw, ZoomIn, ZoomOut } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { useIsMobile } from '@/hooks/use-mobile';
 
@@ -60,6 +60,9 @@ export const PolyMapper: React.FC = () => {
   const [isPanning, setIsPanning] = useState(false);
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
   const [lastPanPoint, setLastPanPoint] = useState({ x: 0, y: 0 });
+  const [zoomLevel, setZoomLevel] = useState(1.0);
+  const [isZooming, setIsZooming] = useState(false);
+  const [lastZoomDistance, setLastZoomDistance] = useState(0);
   
   const isMobile = useIsMobile();
   const nodeRadius = isMobile ? 35 : 25; // Larger touch targets on mobile
@@ -114,6 +117,10 @@ export const PolyMapper: React.FC = () => {
     // Clear canvas
     ctx.clearRect(0, 0, rect.width, rect.height);
 
+    // Apply zoom transformation
+    ctx.save();
+    ctx.scale(zoomLevel, zoomLevel);
+
     // Draw relationships first (behind nodes)
     relationships.forEach(rel => {
       const fromPerson = people.find(p => p.id === rel.from);
@@ -128,7 +135,10 @@ export const PolyMapper: React.FC = () => {
     people.forEach(person => {
       drawPerson(ctx, person);
     });
-  }, [people, relationships, panOffset]);
+
+    // Restore context
+    ctx.restore();
+  }, [people, relationships, panOffset, zoomLevel]);
 
   const drawPerson = (ctx: CanvasRenderingContext2D, person: Person) => {
     // Draw node circle with pan offset
@@ -360,7 +370,28 @@ export const PolyMapper: React.FC = () => {
 
   const resetView = () => {
     setPanOffset({ x: 0, y: 0 });
+    setZoomLevel(1.0);
     toast({ title: "View reset to center" });
+  };
+
+  const zoomIn = () => {
+    const newZoomLevel = Math.min(3.0, zoomLevel * 1.2);
+    setZoomLevel(newZoomLevel);
+    toast({ title: `Zoomed to ${Math.round(newZoomLevel * 100)}%` });
+  };
+
+  const zoomOut = () => {
+    const newZoomLevel = Math.max(0.5, zoomLevel / 1.2);
+    setZoomLevel(newZoomLevel);
+    toast({ title: `Zoomed to ${Math.round(newZoomLevel * 100)}%` });
+  };
+
+  // Helper function to calculate distance between two touch points
+  const getTouchDistance = (touches: TouchList) => {
+    if (touches.length < 2) return 0;
+    const dx = touches[0].clientX - touches[1].clientX;
+    const dy = touches[0].clientY - touches[1].clientY;
+    return Math.sqrt(dx * dx + dy * dy);
   };
 
   // Helper function to get coordinates from mouse or touch event
@@ -386,8 +417,8 @@ export const PolyMapper: React.FC = () => {
       return null;
     }
     
-    const x = (clientX - rect.left) * scaleX / (window.devicePixelRatio || 1) - panOffset.x;
-    const y = (clientY - rect.top) * scaleY / (window.devicePixelRatio || 1) - panOffset.y;
+    const x = ((clientX - rect.left) * scaleX / (window.devicePixelRatio || 1) - panOffset.x) / zoomLevel;
+    const y = ((clientY - rect.top) * scaleY / (window.devicePixelRatio || 1) - panOffset.y) / zoomLevel;
     
     return { x, y };
   };
@@ -399,7 +430,7 @@ export const PolyMapper: React.FC = () => {
 
     for (const person of people) {
       const dist = Math.sqrt((coords.x - person.x) ** 2 + (coords.y - person.y) ** 2);
-      if (dist < nodeRadius) {
+      if (dist < nodeRadius / zoomLevel) { // Account for zoom level in hit detection
         setIsDragging(true);
         setDraggedPerson(person);
         break;
@@ -410,26 +441,37 @@ export const PolyMapper: React.FC = () => {
   // Canvas touch events
   const handleTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
     e.preventDefault(); // Prevent scrolling
-    const coords = getEventCoordinates(e);
-    if (!coords) return;
 
-    // Check if touching a person node
-    let foundPerson = false;
-    for (const person of people) {
-      const dist = Math.sqrt((coords.x - person.x) ** 2 + (coords.y - person.y) ** 2);
-      if (dist < nodeRadius) {
-        setIsDragging(true);
-        setDraggedPerson(person);
-        foundPerson = true;
-        break;
-      }
+    // Handle pinch zoom (two fingers)
+    if (e.touches.length === 2 && isMobile) {
+      setIsZooming(true);
+      setLastZoomDistance(getTouchDistance(e.touches));
+      return;
     }
 
-    // If not touching a person and on mobile, start panning
-    if (!foundPerson && isMobile) {
-      setIsPanning(true);
-      const touch = e.touches[0];
-      setLastPanPoint({ x: touch.clientX, y: touch.clientY });
+    // Handle single touch
+    if (e.touches.length === 1) {
+      const coords = getEventCoordinates(e);
+      if (!coords) return;
+
+      // Check if touching a person node
+      let foundPerson = false;
+      for (const person of people) {
+        const dist = Math.sqrt((coords.x - person.x) ** 2 + (coords.y - person.y) ** 2);
+        if (dist < nodeRadius * zoomLevel) { // Account for zoom level in hit detection
+          setIsDragging(true);
+          setDraggedPerson(person);
+          foundPerson = true;
+          break;
+        }
+      }
+
+      // If not touching a person and on mobile, start panning
+      if (!foundPerson && isMobile) {
+        setIsPanning(true);
+        const touch = e.touches[0];
+        setLastPanPoint({ x: touch.clientX, y: touch.clientY });
+      }
     }
   };
 
@@ -439,12 +481,9 @@ export const PolyMapper: React.FC = () => {
     const coords = getEventCoordinates(e);
     if (!coords) return;
 
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const rect = canvas.getBoundingClientRect();
-    const x = Math.max(nodeRadius, Math.min(rect.width - nodeRadius, coords.x));
-    const y = Math.max(nodeRadius, Math.min(rect.height - nodeRadius, coords.y));
+    // Use logical canvas dimensions for constraints, accounting for pan offset and zoom
+    const x = Math.max((nodeRadius - panOffset.x) / zoomLevel, Math.min((canvasSize.width - nodeRadius - panOffset.x) / zoomLevel, coords.x));
+    const y = Math.max((nodeRadius - panOffset.y) / zoomLevel, Math.min((canvasSize.height - nodeRadius - panOffset.y) / zoomLevel, coords.y));
 
     setPeople(prev => prev.map(p => 
       p.id === draggedPerson.id ? { ...p, x, y } : p
@@ -454,22 +493,31 @@ export const PolyMapper: React.FC = () => {
   const handleTouchMove = (e: React.TouchEvent<HTMLCanvasElement>) => {
     e.preventDefault(); // Prevent scrolling
     
-    if (isDragging && draggedPerson) {
+    // Handle pinch zoom (two fingers)
+    if (e.touches.length === 2 && isZooming && isMobile) {
+      const currentDistance = getTouchDistance(e.touches);
+      if (lastZoomDistance > 0) {
+        const zoomFactor = currentDistance / lastZoomDistance;
+        const newZoomLevel = Math.max(0.5, Math.min(3.0, zoomLevel * zoomFactor));
+        setZoomLevel(newZoomLevel);
+      }
+      setLastZoomDistance(currentDistance);
+      return;
+    }
+    
+    if (isDragging && draggedPerson && e.touches.length === 1) {
       // Handle node dragging
       const coords = getEventCoordinates(e);
       if (!coords) return;
 
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-
-      const rect = canvas.getBoundingClientRect();
-      const x = Math.max(nodeRadius, Math.min(rect.width - nodeRadius, coords.x));
-      const y = Math.max(nodeRadius, Math.min(rect.height - nodeRadius, coords.y));
+      // Use logical canvas dimensions for constraints, accounting for pan offset and zoom
+      const x = Math.max((nodeRadius - panOffset.x) / zoomLevel, Math.min((canvasSize.width - nodeRadius - panOffset.x) / zoomLevel, coords.x));
+      const y = Math.max((nodeRadius - panOffset.y) / zoomLevel, Math.min((canvasSize.height - nodeRadius - panOffset.y) / zoomLevel, coords.y));
 
       setPeople(prev => prev.map(p => 
         p.id === draggedPerson.id ? { ...p, x, y } : p
       ));
-    } else if (isPanning && isMobile) {
+    } else if (isPanning && isMobile && e.touches.length === 1) {
       // Handle canvas panning
       const touch = e.touches[0];
       const deltaX = touch.clientX - lastPanPoint.x;
@@ -494,6 +542,8 @@ export const PolyMapper: React.FC = () => {
     setIsDragging(false);
     setDraggedPerson(null);
     setIsPanning(false);
+    setIsZooming(false);
+    setLastZoomDistance(0);
   };
 
   useEffect(() => {
@@ -649,15 +699,23 @@ export const PolyMapper: React.FC = () => {
           <div className="flex items-center justify-between">
             <CardTitle>Your Polycule Map</CardTitle>
             {isMobile && (
-              <Button onClick={resetView} variant="outline" size="sm" className="flex items-center gap-2">
-                <RotateCcw className="h-4 w-4" />
-                Reset View
-              </Button>
+              <div className="flex gap-2">
+                <Button onClick={zoomOut} variant="outline" size="sm">
+                  <ZoomOut className="h-4 w-4" />
+                </Button>
+                <Button onClick={zoomIn} variant="outline" size="sm">
+                  <ZoomIn className="h-4 w-4" />
+                </Button>
+                <Button onClick={resetView} variant="outline" size="sm" className="flex items-center gap-2">
+                  <RotateCcw className="h-4 w-4" />
+                  Reset
+                </Button>
+              </div>
             )}
           </div>
           <p className="text-sm text-muted-foreground">
             {isMobile 
-              ? "Touch and drag people to move them. Touch and drag empty space to pan the view."
+              ? "Touch and drag people to move them. Touch and drag empty space to pan the view. Use pinch gestures to zoom in/out."
               : "Drag people around to arrange your network. Click and drag the colored circles to move people."
             }
           </p>
