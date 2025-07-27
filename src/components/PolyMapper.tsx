@@ -196,20 +196,36 @@ export const PolyMapper: React.FC = () => {
     ctx.restore();
   };
 
+  // Input sanitization helper
+  const sanitizeName = (name: string): string => {
+    return name
+      .trim()
+      .replace(/<[^>]*>/g, '') // Remove HTML tags
+      .replace(/[<>\"'&]/g, '') // Remove potentially dangerous characters
+      .substring(0, 50); // Limit to 50 characters
+  };
+
   const addPerson = () => {
-    if (!newPersonName.trim()) {
-      toast({ title: "Please enter a name" });
+    const sanitizedName = sanitizeName(newPersonName);
+    
+    if (!sanitizedName) {
+      toast({ title: "Please enter a valid name" });
       return;
     }
 
-    if (people.some(p => p.name.toLowerCase() === newPersonName.toLowerCase())) {
+    if (sanitizedName.length > 50) {
+      toast({ title: "Name must be 50 characters or less" });
+      return;
+    }
+
+    if (people.some(p => p.name.toLowerCase() === sanitizedName.toLowerCase())) {
       toast({ title: "Person with this name already exists" });
       return;
     }
 
     const newPerson: Person = {
       id: Date.now().toString(),
-      name: newPersonName.trim(),
+      name: sanitizedName,
       x: Math.random() * (canvasSize.width - 100) + 50,
       y: Math.random() * (canvasSize.height - 100) + 50,
       color: nodeColors[people.length % nodeColors.length]
@@ -236,17 +252,36 @@ export const PolyMapper: React.FC = () => {
     const file = event.target.files?.[0];
     if (!file) return;
 
+    // Simple file size limit (1MB)
+    if (file.size > 1024 * 1024) {
+      toast({ title: "File too large (max 1MB)", variant: "destructive" });
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
         const data = JSON.parse(e.target?.result as string);
-        if (data.people && data.relationships) {
-          setPeople(data.people);
-          setRelationships(data.relationships);
-          toast({ title: "Map imported successfully" });
-        } else {
+        
+        // Simple validation - check structure and types
+        if (!data.people || !data.relationships || !Array.isArray(data.people) || !Array.isArray(data.relationships)) {
           toast({ title: "Invalid file format", variant: "destructive" });
+          return;
         }
+
+        // Validate people structure
+        const validPeople = data.people.every((person: any) => 
+          person.id && person.name && typeof person.x === 'number' && typeof person.y === 'number'
+        );
+
+        if (!validPeople) {
+          toast({ title: "Invalid people data format", variant: "destructive" });
+          return;
+        }
+
+        setPeople(data.people);
+        setRelationships(data.relationships);
+        toast({ title: "Map imported successfully" });
       } catch (error) {
         toast({ title: "Error reading file", variant: "destructive" });
       }
