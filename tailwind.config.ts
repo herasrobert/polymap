@@ -26,7 +26,8 @@ export default {
 				foreground: 'hsl(var(--foreground))',
 				primary: {
 					DEFAULT: 'hsl(var(--primary))',
-					foreground: 'hsl(var(--primary-foreground))'
+					foreground: 'hsl(var(--primary-foreground))',
+					soft: 'hsl(var(--primary-soft))'
 				},
 				secondary: {
 					DEFAULT: 'hsl(var(--secondary))',
@@ -52,6 +53,21 @@ export default {
 					DEFAULT: 'hsl(var(--card))',
 					foreground: 'hsl(var(--card-foreground))'
 				},
+				relationship: {
+					'committed-nesting': 'hsl(var(--relationship-committed-nesting))',
+					'committed': 'hsl(var(--relationship-committed))',
+					'budding': 'hsl(var(--relationship-budding))',
+					'sexual': 'hsl(var(--relationship-sexual))',
+					'platonic': 'hsl(var(--relationship-platonic))',
+					'queer-platonic': 'hsl(var(--relationship-queer-platonic))',
+					'partner': 'hsl(var(--relationship-partner))',
+					'play': 'hsl(var(--relationship-play))'
+				},
+				node: {
+					primary: 'hsl(var(--node-primary))',
+					secondary: 'hsl(var(--node-secondary))',
+					accent: 'hsl(var(--node-accent))'
+				},
 				sidebar: {
 					DEFAULT: 'hsl(var(--sidebar-background))',
 					foreground: 'hsl(var(--sidebar-foreground))',
@@ -67,6 +83,20 @@ export default {
 				lg: 'var(--radius)',
 				md: 'calc(var(--radius) - 2px)',
 				sm: 'calc(var(--radius) - 4px)'
+			},
+			backgroundImage: {
+				'gradient-primary': 'var(--gradient-primary)',
+				'gradient-background': 'var(--gradient-background)',
+				'gradient-card': 'var(--gradient-card)'
+			},
+			boxShadow: {
+				soft: 'var(--shadow-soft)',
+				medium: 'var(--shadow-medium)',
+				strong: 'var(--shadow-strong)'
+			},
+			transitionTimingFunction: {
+				smooth: 'var(--transition-smooth)',
+				bounce: 'var(--transition-bounce)'
 			},
 			keyframes: {
 				'accordion-down': {

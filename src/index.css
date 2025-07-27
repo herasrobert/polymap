@@ -2,39 +2,75 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
-All colors MUST be HSL.
-*/
+/* Poly Map Design System - Beautiful, vibrant colors for relationship visualization */
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    /* Base colors - warm, inviting background */
+    --background: 332 15% 97%;
+    --foreground: 332 15% 15%;
 
+    /* Cards and surfaces */
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 332 15% 15%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
+    --popover-foreground: 332 15% 15%;
 
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
+    /* Primary - Beautiful magenta/pink for main branding */
+    --primary: 320 70% 55%;
+    --primary-foreground: 0 0% 98%;
+    --primary-soft: 320 40% 85%;
 
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    /* Secondary - Soft lavender */
+    --secondary: 280 25% 88%;
+    --secondary-foreground: 332 15% 15%;
 
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    /* Muted tones */
+    --muted: 320 15% 94%;
+    --muted-foreground: 332 15% 45%;
 
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    /* Accent - Vibrant purple */
+    --accent: 280 65% 65%;
+    --accent-foreground: 0 0% 98%;
 
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
+    /* Status colors */
+    --destructive: 0 75% 60%;
+    --destructive-foreground: 0 0% 98%;
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
+    /* Borders and inputs */
+    --border: 320 20% 88%;
+    --input: 320 20% 90%;
+    --ring: 320 70% 55%;
+
+    /* Relationship colors - vibrant and distinct */
+    --relationship-committed-nesting: 220 85% 55%;
+    --relationship-committed: 220 85% 55%;
+    --relationship-budding: 220 85% 55%;
+    --relationship-sexual: 0 0% 20%;
+    --relationship-platonic: 200 15% 55%;
+    --relationship-queer-platonic: 280 65% 65%;
+    --relationship-partner: 320 70% 55%;
+    --relationship-play: 45 85% 55%;
+
+    /* Node colors */
+    --node-primary: 320 70% 55%;
+    --node-secondary: 280 65% 65%;
+    --node-accent: 220 85% 55%;
+
+    /* Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(320 70% 55%), hsl(280 65% 65%));
+    --gradient-background: linear-gradient(180deg, hsl(332 15% 97%), hsl(320 20% 94%));
+    --gradient-card: linear-gradient(145deg, hsl(0 0% 100%), hsl(320 15% 98%));
+
+    /* Shadows */
+    --shadow-soft: 0 4px 20px hsl(320 40% 85% / 0.3);
+    --shadow-medium: 0 8px 30px hsl(320 40% 75% / 0.4);
+    --shadow-strong: 0 12px 40px hsl(320 40% 65% / 0.5);
+
+    /* Animations */
+    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-bounce: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
 
     --radius: 0.5rem;
 
