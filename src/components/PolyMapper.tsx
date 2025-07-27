@@ -112,7 +112,7 @@ export const PolyMapper: React.FC = () => {
     people.forEach(person => {
       drawPerson(ctx, person);
     });
-  }, [people, relationships]);
+  }, [people, relationships, drawRelationship]);
 
   const drawPerson = (ctx: CanvasRenderingContext2D, person: Person) => {
     // Draw node circle
