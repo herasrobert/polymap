@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Trash2, Users, Heart } from 'lucide-react';
+import { Plus, Trash2, Users, Heart, Download, Upload } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
 export interface Person {
@@ -84,11 +84,19 @@ export const PolyMapper: React.FC = () => {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    canvas.width = canvasSize.width;
-    canvas.height = canvasSize.height;
+    // Set canvas resolution to match display size
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    canvas.style.width = rect.width + 'px';
+    canvas.style.height = rect.height + 'px';
+    
+    ctx.scale(dpr, dpr);
 
     // Clear canvas
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.clearRect(0, 0, rect.width, rect.height);
 
     // Draw relationships first (behind nodes)
     relationships.forEach(rel => {
@@ -100,11 +108,11 @@ export const PolyMapper: React.FC = () => {
       }
     });
 
-    // Draw people nodes
+    // Draw people nodes on top
     people.forEach(person => {
       drawPerson(ctx, person);
     });
-  }, [people, relationships, canvasSize]);
+  }, [people, relationships]);
 
   const drawPerson = (ctx: CanvasRenderingContext2D, person: Person) => {
     // Draw node circle
@@ -212,6 +220,41 @@ export const PolyMapper: React.FC = () => {
     toast({ title: `Added ${newPerson.name} to the map` });
   };
 
+  const exportData = () => {
+    const data = { people, relationships };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'polycule-map.json';
+    a.click();
+    URL.revokeObjectURL(url);
+    toast({ title: "Map exported successfully" });
+  };
+
+  const importData = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = JSON.parse(e.target?.result as string);
+        if (data.people && data.relationships) {
+          setPeople(data.people);
+          setRelationships(data.relationships);
+          toast({ title: "Map imported successfully" });
+        } else {
+          toast({ title: "Invalid file format", variant: "destructive" });
+        }
+      } catch (error) {
+        toast({ title: "Error reading file", variant: "destructive" });
+      }
+    };
+    reader.readAsText(file);
+    event.target.value = '';
+  };
+
   const addRelationship = () => {
     if (!selectedFrom || !selectedTo || selectedFrom === selectedTo) {
       toast({ title: "Please select two different people" });
@@ -260,8 +303,11 @@ export const PolyMapper: React.FC = () => {
     if (!canvas) return;
 
     const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    
+    const x = (e.clientX - rect.left) * scaleX / (window.devicePixelRatio || 1);
+    const y = (e.clientY - rect.top) * scaleY / (window.devicePixelRatio || 1);
 
     for (const person of people) {
       const dist = Math.sqrt((x - person.x) ** 2 + (y - person.y) ** 2);
@@ -280,8 +326,13 @@ export const PolyMapper: React.FC = () => {
     if (!canvas) return;
 
     const rect = canvas.getBoundingClientRect();
-    const x = Math.max(nodeRadius, Math.min(canvasSize.width - nodeRadius, e.clientX - rect.left));
-    const y = Math.max(nodeRadius, Math.min(canvasSize.height - nodeRadius, e.clientY - rect.top));
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    
+    const x = Math.max(nodeRadius, Math.min(rect.width - nodeRadius, 
+      (e.clientX - rect.left) * scaleX / (window.devicePixelRatio || 1)));
+    const y = Math.max(nodeRadius, Math.min(rect.height - nodeRadius, 
+      (e.clientY - rect.top) * scaleY / (window.devicePixelRatio || 1)));
 
     setPeople(prev => prev.map(p => 
       p.id === draggedPerson.id ? { ...p, x, y } : p
@@ -310,6 +361,27 @@ export const PolyMapper: React.FC = () => {
         <p className="text-muted-foreground text-lg">
           Visualize your polycule connections in an interactive network map
         </p>
+      </div>
+
+      {/* Export/Import Controls */}
+      <div className="flex justify-center gap-4 mb-6">
+        <Button onClick={exportData} variant="outline" className="flex items-center gap-2">
+          <Download className="h-4 w-4" />
+          Export Map
+        </Button>
+        <div className="relative">
+          <input
+            type="file"
+            accept=".json"
+            onChange={importData}
+            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+            id="import-file"
+          />
+          <Button variant="outline" className="flex items-center gap-2">
+            <Upload className="h-4 w-4" />
+            Import Map
+          </Button>
+        </div>
       </div>
 
       {/* Controls */}
