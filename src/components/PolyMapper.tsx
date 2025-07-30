@@ -21,6 +21,8 @@ export interface Relationship {
   from: string;
   to: string;
   type: RelationshipType;
+  customLabel?: string; // For custom relationships
+  customPattern?: 'solid' | 'dashed' | 'dotted'; // For custom line pattern
 }
 
 export type RelationshipType = 
@@ -31,7 +33,8 @@ export type RelationshipType =
   | 'platonic'
   | 'queer-platonic'
   | 'partner'
-  | 'play';
+  | 'play'
+  | 'custom';
 
 const relationshipTypes: { value: RelationshipType; label: string; description: string; color: string; pattern: string }[] = [
   { value: 'committed-nesting', label: 'Committed Partnership - Nesting', description: 'Living together committed relationship', color: '#3b82f6', pattern: 'solid' },
@@ -41,7 +44,8 @@ const relationshipTypes: { value: RelationshipType; label: string; description: 
   { value: 'platonic', label: 'Platonic Friendship', description: 'Close platonic friend', color: '#6b7280', pattern: 'dashed' },
   { value: 'queer-platonic', label: 'Queer Platonic', description: 'Queer platonic partnership', color: '#8b5cf6', pattern: 'solid' },
   { value: 'partner', label: 'Partner', description: 'General partnership', color: '#ec4899', pattern: 'solid' },
-  { value: 'play', label: 'Play Partner', description: 'Kink/play relationship', color: '#f59e0b', pattern: 'dashed' }
+  { value: 'play', label: 'Play Partner', description: 'Kink/play relationship', color: '#f59e0b', pattern: 'dashed' },
+  { value: 'custom', label: 'Custom', description: 'Create your own relationship type', color: '#6366f1', pattern: 'solid' }
 ];
 
 const nodeColors = ['#ec4899', '#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ef4444'];
@@ -63,6 +67,10 @@ export const PolyMapper: React.FC = () => {
   const [zoomLevel, setZoomLevel] = useState(1.0);
   const [isZooming, setIsZooming] = useState(false);
   const [lastZoomDistance, setLastZoomDistance] = useState(0);
+  
+  // Simple custom relationship state
+  const [customLabel, setCustomLabel] = useState('');
+  const [customPattern, setCustomPattern] = useState<'solid' | 'dashed' | 'dotted'>('solid');
   
   const isMobile = useIsMobile();
   const nodeRadius = isMobile ? 35 : 25; // Larger touch targets on mobile
@@ -127,7 +135,7 @@ export const PolyMapper: React.FC = () => {
       const toPerson = people.find(p => p.id === rel.to);
       
       if (fromPerson && toPerson) {
-        drawRelationship(ctx, fromPerson, toPerson, rel.type);
+        drawRelationship(ctx, fromPerson, toPerson, rel);
       }
     });
 
@@ -169,8 +177,8 @@ export const PolyMapper: React.FC = () => {
     ctx.fillText(person.name, x, y);
   };
 
-  const drawRelationship = (ctx: CanvasRenderingContext2D, from: Person, to: Person, type: RelationshipType) => {
-    const relType = relationshipTypes.find(rt => rt.value === type);
+  const drawRelationship = (ctx: CanvasRenderingContext2D, from: Person, to: Person, relationship: Relationship) => {
+    const relType = getRelationshipTypeDetails(relationship);
     if (!relType) return;
 
     const fromX = from.x + panOffset.x;
@@ -239,6 +247,20 @@ export const PolyMapper: React.FC = () => {
       .replace(/<[^>]*>/g, '') // Remove HTML tags
       .replace(/[<>\"'&]/g, '') // Remove potentially dangerous characters
       .substring(0, 50); // Limit to 50 characters
+  };
+
+  // Helper function to get relationship type details (predefined or custom)
+  const getRelationshipTypeDetails = (relationship: Relationship) => {
+    if (relationship.type === 'custom' && relationship.customLabel) {
+      return {
+        value: 'custom',
+        label: relationship.customLabel,
+        description: relationship.customLabel,
+        color: '#6366f1', // Default custom color
+        pattern: relationship.customPattern || 'solid'
+      };
+    }
+    return relationshipTypes.find(rt => rt.value === relationship.type);
   };
 
   const addPerson = () => {
@@ -332,6 +354,11 @@ export const PolyMapper: React.FC = () => {
       return;
     }
 
+    if (selectedRelType === 'custom' && !customLabel.trim()) {
+      toast({ title: "Please enter a custom relationship label" });
+      return;
+    }
+
     // Check if relationship already exists
     const exists = relationships.some(rel => 
       (rel.from === selectedFrom && rel.to === selectedTo) ||
@@ -343,20 +370,34 @@ export const PolyMapper: React.FC = () => {
       return;
     }
 
+    const sanitizedCustomLabel = selectedRelType === 'custom' ? sanitizeName(customLabel) : undefined;
+
     const newRelationship: Relationship = {
       id: Date.now().toString(),
       from: selectedFrom,
       to: selectedTo,
-      type: selectedRelType
+      type: selectedRelType,
+      customLabel: sanitizedCustomLabel,
+      customPattern: selectedRelType === 'custom' ? customPattern : undefined
     };
 
     setRelationships(prev => [...prev, newRelationship]);
     setSelectedFrom('');
     setSelectedTo('');
     
+    // Reset custom fields
+    if (selectedRelType === 'custom') {
+      setCustomLabel('');
+      setCustomPattern('solid');
+    }
+    
     const fromName = people.find(p => p.id === selectedFrom)?.name;
     const toName = people.find(p => p.id === selectedTo)?.name;
-    toast({ title: `Added relationship between ${fromName} and ${toName}` });
+    const relationshipLabel = selectedRelType === 'custom' 
+      ? sanitizedCustomLabel 
+      : relationshipTypes.find(rt => rt.value === selectedRelType)?.label;
+    
+    toast({ title: `Added ${relationshipLabel} relationship between ${fromName} and ${toName}` });
   };
 
   const removeRelationship = (id: string) => {
@@ -684,7 +725,33 @@ export const PolyMapper: React.FC = () => {
                   </SelectContent>
                 </Select>
 
-                <Button onClick={addRelationship} className="w-full" variant="gradient">
+                {selectedRelType === 'custom' && (
+                  <div className="space-y-3">
+                    <Input
+                      placeholder="Enter custom relationship type (e.g., Co-parents)"
+                      value={customLabel}
+                      onChange={(e) => setCustomLabel(e.target.value)}
+                      maxLength={30}
+                    />
+                    <Select value={customPattern} onValueChange={(value: 'solid' | 'dashed' | 'dotted') => setCustomPattern(value)}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Line Style" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="solid">Solid Line</SelectItem>
+                        <SelectItem value="dashed">Dashed Line</SelectItem>
+                        <SelectItem value="dotted">Dotted Line</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                <Button 
+                  onClick={addRelationship} 
+                  className="w-full" 
+                  variant="gradient"
+                  disabled={selectedRelType === 'custom' && !customLabel.trim()}
+                >
                   Add Relationship
                 </Button>
               </>
@@ -775,7 +842,7 @@ export const PolyMapper: React.FC = () => {
               {relationships.map(rel => {
                 const fromPerson = people.find(p => p.id === rel.from);
                 const toPerson = people.find(p => p.id === rel.to);
-                const relType = relationshipTypes.find(rt => rt.value === rel.type);
+                const relType = getRelationshipTypeDetails(rel);
                 
                 return (
                   <div key={rel.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
